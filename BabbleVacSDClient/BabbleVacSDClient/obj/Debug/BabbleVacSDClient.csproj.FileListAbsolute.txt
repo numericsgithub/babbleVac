@@ -1,0 +1,14 @@
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\bin\Debug\BabbleVacSDClient.exe.config
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\bin\Debug\BabbleVacSDClient.exe
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\bin\Debug\BabbleVacSDClient.pdb
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.csprojAssemblyReference.cache
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Controls.Step1Control.resources
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Properties.Resources.resources
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.csproj.GenerateResource.cache
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.csproj.CoreCompileInputs.cache
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.exe
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.pdb
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Controls.Step2Control.resources
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Form.resources
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Controls.StepBaseControl.resources
+C:\Users\Admin\Documents\GitHub\babbleVac\BabbleVacSDClient\BabbleVacSDClient\obj\Debug\BabbleVacSDClient.Controls.Step3Control.resources
