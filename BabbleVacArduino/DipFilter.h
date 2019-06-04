@@ -1,32 +1,92 @@
 class DipFilter
 {
   private:
-    int pitchStartValue;
+    int pitch;
     int lastFeed;
-    int direction;
 
-    private void ChangeDirection(int value)
+    /*bool NewDirection(int value)
     {
-      if(value < 0)
-        direction = -1;
-      else direction = 1;
-    }
+      if(value < lastFeed)
+        return -1;
+      else if(value > lastFeed) return 1;
+      else if(value == lastFeed)
+        return 0;
+      return curDirection;
+    }*/
   public:
+    int curDirection;
+    
     DipFilter()
     {
-      pitchStartValue = 0;
+      //pitchStartValue = 0;
       lastFeed = 0;
-      direction = 0;
-      isReady = false;
+      curDirection = 0;
     }
 
     int Empty()
     {
+      return pitch;
     }
 
     bool Feed(int value)
     {
-      switch(direction)
+      if(value > lastFeed) // We go up
+      {
+        if(curDirection == 1)
+        {
+          lastFeed = value;
+          return false; // All fine
+        }
+        if(value != lastFeed)
+        {
+          curDirection = 1;
+        }
+        else curDirection = 0;
+        pitch = lastFeed;
+        lastFeed = value;
+        return true; // All changed
+      }
+      if(value < lastFeed) // We go down
+      {
+        if(curDirection == -1)
+        {
+          lastFeed = value;
+          return false; // All fine
+        }
+        if(value != lastFeed)
+          curDirection = -1;
+        else curDirection = 0;
+        pitch = lastFeed;
+        lastFeed = value;
+        return true; // All changed
+      }
+      if(value == lastFeed) // We stay
+      {
+        if(curDirection == 0)
+        {
+          lastFeed = value;
+          return false; // All fine
+        }
+        if(value > lastFeed)
+          curDirection = 1;
+        else curDirection = -1;
+        pitch = lastFeed;
+        lastFeed = value;
+        return true; // All changed
+      }
+      
+      /*if(NewDirection(value) != curDirection)
+      {
+        Serial.println("900");
+        curDirection = NewDirection(value);
+        lastFeed = value;
+        disturbance = 0;
+        return true;
+      }
+      lastFeed = value;
+      return false;*/
+      
+      /*switch(direction)
       {
         case 0: 
         {
@@ -35,7 +95,19 @@ class DipFilter
           pitchStartValue = 0;
           ChangeDirection(value);
         } break;
+        case 1: 
+        {
+          if(value > lastFeed)
+          {
+            lastFeed = value;
+            return false;
+          }
+          pitchStartValue = value;
+          ChangeDirection(value);
+        } break;
       }
+      lastFeed = value;
+      return true;*/
     }
 };
 

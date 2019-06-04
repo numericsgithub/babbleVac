@@ -1,6 +1,10 @@
 #include <SimpleSDAudio.h>
 #include "SoundFolder.h"
 #include "AccumulationFilter.h"
+#include "ImpactFilter.h"
+#include "MeanFinder.h"
+#include "DipFilter.h"
+#include "MaxFilter.h"
 #include "Wire.h" // This library allows you to communicate with I2C devices.
 const int MPU_ADDR = 0x68; // I2C address of the MPU-6050. If AD0 pin is set to HIGH, the I2C address will be 0x69.
 int16_t accelerometer_x, accelerometer_y, accelerometer_z; // variables for accelerometer raw data
@@ -18,9 +22,17 @@ SoundFolder* AfterEnd;
 SoundFolder* OnCollision;
 SoundFolder* WhileCleaning;
 SoundFolder* LiftUp;
-AccumulationFilter* accFilter;
-AccumulationFilter* accFilter2;
-AccumulationFilter* accFilter3;
+MeanFinder* meanForceX;
+MeanFinder* meanForceY;
+MeanFinder* meanForceZ;
+MaxFilter* maxForceX;
+MaxFilter* maxForceY;
+MaxFilter* maxForceZ;
+MaxFilter* maxForceAcY;
+MeanFinder* meanForceImpact;
+ImpactFilter * impactFilter;
+int lastDipValue = 0;
+unsigned long lastImpact = 0;
 
 /*
  * 100 als Grenze für aufheben. gyro_y
@@ -90,15 +102,23 @@ void setup() {
   Serial.println("Folder Init DONE");
  // SdPlay.dir(&dir_callback);
   Serial.println("Folder Fill Called");
-  accFilter = new AccumulationFilter(500, true);
-  accFilter2 = new AccumulationFilter(10, false);
-  accFilter3 = new AccumulationFilter(500, true);
+  //meanFinder = new MeanFinder();
+  impactFilter = new ImpactFilter();
+  meanForceX = new MeanFinder();
+  meanForceY = new MeanFinder();
+  meanForceZ = new MeanFinder();
+  maxForceX = new MaxFilter();
+  maxForceY = new MaxFilter();
+  maxForceZ = new MaxFilter();
+  maxForceAcY = new MaxFilter();
+  meanForceImpact = new MeanFinder();
   /*delay(1000);
   Serial.print("GO ");
   delay(1000);
   Serial.print("GO ");
   delay(1000);
   Serial.println("GO ");*/
+  Serial.println("Init Finished");
 }
 
 void playFile(char* sfile)
@@ -137,64 +157,82 @@ void loop(void)
   gyro_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x43 (GYRO_XOUT_H) and 0x44 (GYRO_XOUT_L)
   gyro_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
   gyro_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
-
-  int impact = abs(gyro_x) / 3.0 + abs(gyro_y) / 3.0 + abs(gyro_z) / 3.0;
-  if(impact > maximpact)
-  {
-    //Serial.println(impact);
-    maximpact = impact;
-  }
-  int maybeupright = abs(accelerometer_z);
-  //Serial.println(maybeupright);
-  if(maybeupright > maxupright)
-  {
-    maxupright = maybeupright;
-    //Serial.println(maxupright);
-    
-  }
-//    Serial.print("aX = "); Serial.print(convert_int16_to_str(accelerometer_x));
-//  Serial.print(" | aY = "); Serial.print(convert_int16_to_str(accelerometer_y));
-//  Serial.print(" | aZ = "); Serial.print(convert_int16_to_str(accelerometer_z));
-//  // the following equation was taken from the documentation [MPU-6000/MPU-6050 Register Map and Description, p.30]
-//  Serial.print(" | tmp = "); Serial.print(temperature/340.00+36.53);
-//  Serial.print(" | gX = "); Serial.print(convert_int16_to_str(gyro_x));
-//  Serial.print(" | gY = "); Serial.print(convert_int16_to_str(gyro_y));
-//  Serial.print(" | gZ = "); Serial.print(convert_int16_to_str(gyro_z));
-//  Serial.println();
-
-
-  /*Serial.print(accelerometer_x);
-  Serial.print(" ");
-  Serial.print(accelerometer_y);
-  Serial.print(" ");
-  Serial.print(accelerometer_z);
-  Serial.print(" ");*/
-
-  /*Serial.print(accelerometer_z);
-  Serial.print(" ");
-  Serial.print(impact);
-  Serial.print(" ");
-  Serial.print(20000);
-  Serial.print(" ");
-  Serial.print(-20000);
-  Serial.println(" ");*/
-
-
-//Serial.print(convert_int16_to_str(gyro_x));
-//  Serial.print(" "); Serial.print(convert_int16_to_str(gyro_y));
-//  Serial.print(" "); Serial.println(convert_int16_to_str(gyro_z));
-
-  //Serial.print(convert_int16_to_str(accelerometer_x));
-  av = 0.01 * gyro_x + (1-0.01) * av;
   
+  meanForceX->Feed(gyro_x);
+  meanForceY->Feed(gyro_y);
+  meanForceZ->Feed(gyro_z);
+  maxForceX->Feed(abs(meanForceX->Get()));
+  maxForceY->Feed(abs(meanForceY->Get()));
+  maxForceZ->Feed(abs(meanForceZ->Get()));
+  maxForceAcY->Feed(abs(accelerometer_y));
+  if(millis() % 1 == 0)
+  {
+    int forceX = maxForceX->Get();
+    int forceY = maxForceY->Get();
+    int forceZ = maxForceZ->Get();
+    int accY = maxForceAcY->Get();
+    meanForceImpact->Feed(abs(forceX) / 2.0 + abs(accY) / 2.0);
+    int forceImpact = meanForceImpact->Get();
+    //int impact = abs(gyro_x) / 2.0 + abs(accelerometer_y) / 2.0;
+    int impact = max(0, forceImpact - abs(forceZ));
+    //Serial.print(impact);
+    //Serial.print(" ");
+    //
+    if(impact > 3500 && (millis() - lastImpact) > 1500)
+    {
+      lastImpact = millis();
+      Serial.print("Collision: ");
+      Serial.println(impact);
+    }
+    /*Serial.print(impact); 
+    Serial.print(" ");
+    Serial.print(meanForceImpact->Mean());
+    Serial.print(" ");
+    Serial.print(3000);
+    Serial.print(" ");
+    Serial.println(forceZ);*/
+    /*if(impact > 600)
+    {
+      for(int i = 0; i < 10; i++)
+      {
+        Serial.print(impact); 
+        Serial.print(" ");
+        Serial.print(meanForceImpact->Mean());
+        Serial.print(" ");
+        Serial.print(3000);
+        Serial.print(" ");
+        Serial.print(abs(forceX)); // GOLD gyro_x (Force in x)
+        Serial.print(" ");
+        Serial.print(abs(accelerometer_y)); // Violet
+        Serial.print(" ");
+        Serial.println(abs(gyro_z)); // Grey
+      }
+    }*/
+  }
+  //Serial.print(convert_int16_to_str(accelerometer_x));
+  /*av = 0.5 * gyro_x + (1-0.5) * av;
+  impactFilter->peekVal = 0.1 * av + (1-0.1) * impactFilter->peekVal;
   accFilter->Feed(av);
   if(accFilter->IsReady())
   {
     lastFiltered = accFilter->Empty();
+    if(dipFilter->Feed(lastFiltered))
+    {
+      lastDipValue = dipFilter->Empty();
+      if(impactFilter->Feed(lastDipValue))
+      {
+        lastImpact = impactFilter->Empty();
+      }
+  
+    }
+  }*/
+  /*if(accFilter->IsReady())
+  {
+    
     if(lastFiltered > gMax)
       gMax = lastFiltered;
     if(lastFiltered < gMin)
-      gMin = lastFiltered;
+      gMin = lastFiltered;*/
     /*accFilter2->Feed(accFilter->Empty());
     if(accFilter2->IsReady())
     {
@@ -208,25 +246,26 @@ void loop(void)
           gMin = lastFiltered;
       }
     }*/
-  }
-  Serial.print(1000);
-  Serial.print(" ");
-  Serial.print(-1000);
-  Serial.print(" ");
-  Serial.print(gMax);
-  Serial.print(" ");
-  Serial.print(gMin);
-  Serial.print(" ");
-  Serial.print(av);
-  Serial.print(" ");
-  Serial.println(lastFiltered);
+  //}
+
   //Serial.print(" ");
   //Serial.print(av);
   //Serial.print(" ");
   //Serial.println(gyro_y);
   //Serial.print(" "); Serial.println(gyro_y);
   //Serial.print(" "); Serial.println(convert_int16_to_str(accelerometer_z));
-
+  /*Serial.print(1000);
+  Serial.print(" ");
+  Serial.print(-1000);
+  Serial.print(" ");
+  Serial.print(lastDipValue);
+  Serial.print(" ");
+  Serial.print(av);
+  Serial.print(" ");
+  Serial.print(lastImpact);
+  Serial.print(" ");
+  Serial.print(impactFilter->peekVal);
+  Serial.println(" ");*/
 
   /*if(impact > 1000)
   {
