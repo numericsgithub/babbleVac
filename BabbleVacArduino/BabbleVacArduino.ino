@@ -1,17 +1,11 @@
 #include <SimpleSDAudio.h>
 #include "SoundFolder.h"
-#include "AccumulationFilter.h"
-#include "ImpactFilter.h"
 #include "MeanFinder.h"
-#include "DipFilter.h"
 #include "MaxFilter.h"
 #include "Wire.h" // This library allows you to communicate with I2C devices.
 const int MPU_ADDR = 0x68; // I2C address of the MPU-6050. If AD0 pin is set to HIGH, the I2C address will be 0x69.
 int16_t accelerometer_x, accelerometer_y, accelerometer_z; // variables for accelerometer raw data
 int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
-int16_t temperature; // variables for temperature data
-int maximpact;
-int maxupright;
 char tmp_str[7]; // temporary variable used in convert function
 int av = 0;
 int lastFiltered = 0;
@@ -25,12 +19,12 @@ SoundFolder* LiftUp;
 MeanFinder* meanForceX;
 MeanFinder* meanForceY;
 MeanFinder* meanForceZ;
+MeanFinder* meanForces;
 MaxFilter* maxForceX;
 MaxFilter* maxForceY;
 MaxFilter* maxForceZ;
 MaxFilter* maxForceAcY;
 MeanFinder* meanForceImpact;
-ImpactFilter * impactFilter;
 int lastDipValue = 0;
 unsigned long lastImpact = 0;
 
@@ -38,6 +32,13 @@ unsigned long lastImpact = 0;
  * 100 als Grenze für aufheben. gyro_y
  * 
  */
+
+int freeRam () 
+{
+extern int __heap_start, *__brkval; 
+int v; 
+return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
 
 char* convert_int16_to_str(int16_t i) { // converts int16 to string. Moreover, resulting strings will have the same length in the debug monitor.
   sprintf(tmp_str, "%6d", i);
@@ -80,7 +81,7 @@ void dir_callback(char *buf) {
 
 void setup() {
   Serial.begin(115200); 
-  Serial.println("Started");
+  Serial.println("Setup started");
   SdPlay.setSDCSPin(10); // sd card cs pin
   Serial.println("setSDCSPin DONE");
   if (!SdPlay.init(SSDA_MODE_FULLRATE | SSDA_MODE_MONO | SSDA_MODE_AUTOWORKER))
@@ -91,26 +92,26 @@ void setup() {
   Serial.println("SdPlay.init DONE");
   Wire.begin();
   Wire.beginTransmission(MPU_ADDR); // Begins a transmission to the I2C slave (GY-521 board)
-  Serial.println("gyro Init Start");
+  Serial.println("Gyro Init START");
   Wire.write(0x6B); // PWR_MGMT_1 register
   Wire.write(0); // set to zero (wakes up the MPU-6050)
-  Serial.println("gyro Init Start2");
+  Serial.println("gyro Init END");
   Wire.endTransmission(true);
   Serial.println("gyro Init DONE");
-  maximpact = 0;
   //InitFolders();
   Serial.println("Folder Init DONE");
  // SdPlay.dir(&dir_callback);
-  Serial.println("Folder Fill Called");
+  Serial.println("Folder Fill CALLED");
   //meanFinder = new MeanFinder();
-  impactFilter = new ImpactFilter();
   meanForceX = new MeanFinder();
   meanForceY = new MeanFinder();
   meanForceZ = new MeanFinder();
+  meanForces = new MeanFinder();
   maxForceX = new MaxFilter();
   maxForceY = new MaxFilter();
   maxForceZ = new MaxFilter();
   maxForceAcY = new MaxFilter();
+  
   meanForceImpact = new MeanFinder();
   /*delay(1000);
   Serial.print("GO ");
@@ -118,7 +119,9 @@ void setup() {
   Serial.print("GO ");
   delay(1000);
   Serial.println("GO ");*/
-  Serial.println("Init Finished");
+  Serial.print("Init Finished. Dynamic memory left after INIT: ");
+  Serial.print(freeRam());
+  Serial.println(" Bytes");
 }
 
 void playFile(char* sfile)
@@ -142,6 +145,7 @@ void playFile(char* sfile)
 
 void loop(void)
 {
+  
   /*char* sfile = AfterStart->GetRandomSoundfile();
   Serial.println(sfile);
   return;*/
@@ -153,7 +157,7 @@ void loop(void)
   accelerometer_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x3B (ACCEL_XOUT_H) and 0x3C (ACCEL_XOUT_L)
   accelerometer_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x3D (ACCEL_YOUT_H) and 0x3E (ACCEL_YOUT_L)
   accelerometer_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x3F (ACCEL_ZOUT_H) and 0x40 (ACCEL_ZOUT_L)
-  temperature = Wire.read()<<8 | Wire.read(); // reading registers: 0x41 (TEMP_OUT_H) and 0x42 (TEMP_OUT_L)
+  Wire.read()<<8 | Wire.read(); // reading registers: 0x41 (TEMP_OUT_H) and 0x42 (TEMP_OUT_L)
   gyro_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x43 (GYRO_XOUT_H) and 0x44 (GYRO_XOUT_L)
   gyro_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
   gyro_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
@@ -161,6 +165,7 @@ void loop(void)
   meanForceX->Feed(gyro_x);
   meanForceY->Feed(gyro_y);
   meanForceZ->Feed(gyro_z);
+  meanForces->Feed(abs(meanForceX->Get()) + abs(meanForceY->Get()));
   maxForceX->Feed(abs(meanForceX->Get()));
   maxForceY->Feed(abs(meanForceY->Get()));
   maxForceZ->Feed(abs(meanForceZ->Get()));
@@ -184,13 +189,9 @@ void loop(void)
       Serial.print("Collision: ");
       Serial.println(impact);
     }
-    /*Serial.print(impact); 
-    Serial.print(" ");
-    Serial.print(meanForceImpact->Mean());
-    Serial.print(" ");
-    Serial.print(3000);
-    Serial.print(" ");
-    Serial.println(forceZ);*/
+    //Serial.print(meanForces->Mean());
+    //Serial.print(" ");
+    //Serial.println(200);
     /*if(impact > 600)
     {
       for(int i = 0; i < 10; i++)
