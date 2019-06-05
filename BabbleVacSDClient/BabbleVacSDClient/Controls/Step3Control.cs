@@ -73,8 +73,10 @@ namespace BabbleVacSDClient.Controls
                 string s = "";
                 while (!formatProcess.HasExited)
                 {
-                    while (formatProcess.StandardOutput.EndOfStream)
+                    while (formatProcess.StandardOutput.EndOfStream && !formatProcess.HasExited)
                         Thread.Sleep(1);
+                    if (formatProcess.HasExited)
+                        break;
                     s += (char)formatProcess.StandardOutput.Read();
                     if(s.Length > 400)
                         s = s.Remove(0, s.Length - 400);
