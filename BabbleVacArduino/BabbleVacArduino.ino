@@ -2,14 +2,10 @@
 #include "SoundFolder.h"
 #include "MeanFinder.h"
 #include "MaxFilter.h"
-#include "Wire.h" // This library allows you to communicate with I2C devices.
+#include "Wire.h" 
 const int MPU_ADDR = 0x68; // I2C address of the MPU-6050. If AD0 pin is set to HIGH, the I2C address will be 0x69.
-int16_t accelerometer_x, accelerometer_y, accelerometer_z; // variables for accelerometer raw data
-int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
-char tmp_str[7]; // temporary variable used in convert function
-int av = 0;
-int lastFiltered = 0;
-int gMin = 0, gMax = 0;
+bool wasDriving;
+#define IS_CLEANING_EDGE 160
 
 SoundFolder* AfterStart;
 SoundFolder* AfterEnd;
@@ -28,34 +24,34 @@ MeanFinder* meanForceImpact;
 int lastDipValue = 0;
 unsigned long lastImpact = 0;
 
-/*
- * 100 als Grenze für aufheben. gyro_y
- * 
- */
-
-int freeRam () 
+int DiscoverFolder(char prefix)
 {
-extern int __heap_start, *__brkval; 
-int v; 
-return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
-
-char* convert_int16_to_str(int16_t i) { // converts int16 to string. Moreover, resulting strings will have the same length in the debug monitor.
-  sprintf(tmp_str, "%6d", i);
-  return tmp_str;
+  int i = 0;
+  char file[] = "s001.wav"; // example 
+  file[0] = prefix;
+  for(; i < 256; i++)
+  {
+    file[1] = (char)(48 + i / 100);
+    file[2] = (char)(48 + (i % 100) / 10);
+    file[3] = (char)(48 + i % 10);
+    if(!SdPlay.setFile(file)) // music name file
+    {
+      break;
+    }
+  }
+  return i;
 }
 
 void InitFolders()
 {
-  Serial.println("CREATING FOLDERS!!!");
-  AfterStart = new SoundFolder('S');
-  AfterEnd = new SoundFolder('E');
-  OnCollision = new SoundFolder('C');
-  WhileCleaning = new SoundFolder('W');
-  LiftUp = new SoundFolder('L');
+  AfterStart = new SoundFolder('S', DiscoverFolder('S'));
+  AfterEnd = new SoundFolder('E', DiscoverFolder('E'));
+  OnCollision = new SoundFolder('C', DiscoverFolder('C'));
+  WhileCleaning = new SoundFolder('W', DiscoverFolder('W'));
+  LiftUp = new SoundFolder('L', DiscoverFolder('L'));
 }
 
-void Add(char* file)
+/*void Add(char* file)
 {
   switch(file[0])
   {
@@ -75,8 +71,9 @@ void Add(char* file)
 }
 
 void dir_callback(char *buf) {
+  Serial.println(buf);
   Add(buf);
-}
+}*/
 
 
 void setup() {
@@ -89,63 +86,56 @@ void setup() {
     Serial.println("SdPlay.init FAIL");
     while(1);
   }
+   if(!SdPlay.setFile("s000.wav")) // music name file
+  {
+    while(1);
+  }
   Serial.println("SdPlay.init DONE");
   Wire.begin();
   Wire.beginTransmission(MPU_ADDR); // Begins a transmission to the I2C slave (GY-521 board)
-  Serial.println("Gyro Init START");
   Wire.write(0x6B); // PWR_MGMT_1 register
   Wire.write(0); // set to zero (wakes up the MPU-6050)
   Serial.println("gyro Init END");
   Wire.endTransmission(true);
-  Serial.println("gyro Init DONE");
-  //InitFolders();
-  Serial.println("Folder Init DONE");
- // SdPlay.dir(&dir_callback);
-  Serial.println("Folder Fill CALLED");
-  //meanFinder = new MeanFinder();
+
+  meanForceImpact = new MeanFinder();
   meanForceX = new MeanFinder();
   meanForceY = new MeanFinder();
-  meanForceZ = new MeanFinder();
+    
   meanForces = new MeanFinder();
+  meanForceZ = new MeanFinder();
   maxForceX = new MaxFilter();
   maxForceY = new MaxFilter();
   maxForceZ = new MaxFilter();
   maxForceAcY = new MaxFilter();
-  
-  meanForceImpact = new MeanFinder();
-  /*delay(1000);
-  Serial.print("GO ");
+  wasDriving = false;
+  InitFolders();
   delay(1000);
-  Serial.print("GO ");
-  delay(1000);
-  Serial.println("GO ");*/
-  Serial.print("Init Finished. Dynamic memory left after INIT: ");
-  Serial.print(freeRam());
-  Serial.println(" Bytes");
 }
 
-void playFile(char* sfile)
+void playFile(int sfile, char prefix)
 {
-  char cstr[4+1+3+1]; // No idea why. For real if you find out why i have to do this... e-mail me!
-  cstr[0] = sfile[0];
-  cstr[1] = sfile[1];
-  cstr[2] = sfile[2];
-  cstr[3] = sfile[3];
+  char cstr[] = "s000.wav"; 
+  cstr[0] = prefix;
+  cstr[1] = (char)(48 + sfile / 100);
+  cstr[2] = (char)(48 + (sfile % 100) / 10);
+  cstr[3] = (char)(48 + sfile % 10);
   cstr[4] = '.';
   cstr[5] = 'W';
   cstr[6] = 'A';
   cstr[7] = 'V';
-  cstr[8] = 0;
   if(!SdPlay.setFile(cstr)) // music name file
   {
-    Serial.println("SdPlay.setFile FAIL");
+    Serial.println("sF");
     while(1);
   }
+  SdPlay.play(); // play music
 }
 
 void loop(void)
 {
-  
+  if(!SdPlay.isStopped())
+    return;
   /*char* sfile = AfterStart->GetRandomSoundfile();
   Serial.println(sfile);
   return;*/
@@ -154,23 +144,59 @@ void loop(void)
   Wire.endTransmission(false); // the parameter indicates that the Arduino will send a restart. As a result, the connection is kept active.
   Wire.requestFrom(MPU_ADDR, 7*2, true); // request a total of 7*2=14 registers
   // "Wire.read()<<8 | Wire.read();" means two registers are read and stored in the same variable
-  accelerometer_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x3B (ACCEL_XOUT_H) and 0x3C (ACCEL_XOUT_L)
-  accelerometer_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x3D (ACCEL_YOUT_H) and 0x3E (ACCEL_YOUT_L)
-  accelerometer_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x3F (ACCEL_ZOUT_H) and 0x40 (ACCEL_ZOUT_L)
-  Wire.read()<<8 | Wire.read(); // reading registers: 0x41 (TEMP_OUT_H) and 0x42 (TEMP_OUT_L)
-  gyro_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x43 (GYRO_XOUT_H) and 0x44 (GYRO_XOUT_L)
-  gyro_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
-  gyro_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
-  
-  meanForceX->Feed(gyro_x);
-  meanForceY->Feed(gyro_y);
-  meanForceZ->Feed(gyro_z);
-  meanForces->Feed(abs(meanForceX->Get()) + abs(meanForceY->Get()));
-  maxForceX->Feed(abs(meanForceX->Get()));
-  maxForceY->Feed(abs(meanForceY->Get()));
-  maxForceZ->Feed(abs(meanForceZ->Get()));
-  maxForceAcY->Feed(abs(accelerometer_y));
-  if(millis() % 1 == 0)
+  {
+    int16_t accelerometer_x, accelerometer_y, accelerometer_z; // variables for accelerometer raw data
+    int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
+    accelerometer_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x3B (ACCEL_XOUT_H) and 0x3C (ACCEL_XOUT_L)
+    accelerometer_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x3D (ACCEL_YOUT_H) and 0x3E (ACCEL_YOUT_L)
+    accelerometer_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x3F (ACCEL_ZOUT_H) and 0x40 (ACCEL_ZOUT_L)
+    Wire.read()<<8 | Wire.read(); // reading registers: 0x41 (TEMP_OUT_H) and 0x42 (TEMP_OUT_L)
+    gyro_x = Wire.read()<<8 | Wire.read(); // reading registers: 0x43 (GYRO_XOUT_H) and 0x44 (GYRO_XOUT_L)
+    gyro_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
+    gyro_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
+    
+    meanForceX->Feed(gyro_x);
+    meanForceY->Feed(gyro_y);
+    meanForceZ->Feed(gyro_z);
+    {
+      int envForce = abs(meanForceX->Get()) + abs(meanForceY->Get());
+      meanForces->Feed(envForce);
+      if(envForce > 900)
+        meanForces->Feed(envForce);
+      if(envForce > 1000)
+        meanForces->Feed(envForce);
+      /*if(envForce > 600)
+        meanForces->Feed(envForce);
+      if(envForce > 700)
+        meanForces->Feed(envForce);
+      if(envForce > 700)
+        meanForces->Feed(envForce);*/
+      if(meanForces->mean > IS_CLEANING_EDGE + 50)
+        meanForces->mean = IS_CLEANING_EDGE + 50;
+    }
+    maxForceX->Feed(abs(meanForceX->Get()));
+    maxForceY->Feed(abs(meanForceY->Get()));
+    maxForceZ->Feed(abs(meanForceZ->Get()));
+    maxForceAcY->Feed(abs(accelerometer_y));
+
+    Serial.print(meanForces->mean);
+    Serial.print(" ");
+    Serial.print(IS_CLEANING_EDGE);
+    Serial.print(" ");
+    Serial.print(abs(meanForceX->Get()) + abs(meanForceY->Get()));
+    Serial.print(" ");
+    Serial.print(gyro_x);
+    Serial.print(" ");
+    Serial.print(gyro_y);
+    Serial.print(" ");
+    Serial.print(meanForceX->mean);
+    Serial.print(" ");
+    Serial.print(meanForceY->mean);
+    Serial.print(" ");
+    Serial.print(wasDriving * 700);
+    Serial.println(" ");
+  }
+  if(millis() % 1 == 0) // Feed all Finders and Filters for 1 milisec
   {
     int forceX = maxForceX->Get();
     int forceY = maxForceY->Get();
@@ -178,102 +204,41 @@ void loop(void)
     int accY = maxForceAcY->Get();
     meanForceImpact->Feed(abs(forceX) / 2.0 + abs(accY) / 2.0);
     int forceImpact = meanForceImpact->Get();
-    //int impact = abs(gyro_x) / 2.0 + abs(accelerometer_y) / 2.0;
     int impact = max(0, forceImpact - abs(forceZ));
-    //Serial.print(impact);
-    //Serial.print(" ");
-    //
-    if(impact > 3500 && (millis() - lastImpact) > 1500)
-    {
-      lastImpact = millis();
-      Serial.print("Collision: ");
-      Serial.println(impact);
-    }
-    //Serial.print(meanForces->Mean());
-    //Serial.print(" ");
-    //Serial.println(200);
-    /*if(impact > 600)
-    {
-      for(int i = 0; i < 10; i++)
-      {
-        Serial.print(impact); 
-        Serial.print(" ");
-        Serial.print(meanForceImpact->Mean());
-        Serial.print(" ");
-        Serial.print(3000);
-        Serial.print(" ");
-        Serial.print(abs(forceX)); // GOLD gyro_x (Force in x)
-        Serial.print(" ");
-        Serial.print(abs(accelerometer_y)); // Violet
-        Serial.print(" ");
-        Serial.println(abs(gyro_z)); // Grey
-      }
-    }*/
-  }
-  //Serial.print(convert_int16_to_str(accelerometer_x));
-  /*av = 0.5 * gyro_x + (1-0.5) * av;
-  impactFilter->peekVal = 0.1 * av + (1-0.1) * impactFilter->peekVal;
-  accFilter->Feed(av);
-  if(accFilter->IsReady())
-  {
-    lastFiltered = accFilter->Empty();
-    if(dipFilter->Feed(lastFiltered))
-    {
-      lastDipValue = dipFilter->Empty();
-      if(impactFilter->Feed(lastDipValue))
-      {
-        lastImpact = impactFilter->Empty();
-      }
-  
-    }
-  }*/
-  /*if(accFilter->IsReady())
-  {
+
+
+
     
-    if(lastFiltered > gMax)
-      gMax = lastFiltered;
-    if(lastFiltered < gMin)
-      gMin = lastFiltered;*/
-    /*accFilter2->Feed(accFilter->Empty());
-    if(accFilter2->IsReady())
+    if((millis() - lastImpact) < 1500) // Only play songs every 1.5 seconds
+      return;
+    
+    if(wasDriving && meanForces->mean > IS_CLEANING_EDGE && impact > 3500) // Collision
     {
-      accFilter3->Feed(accFilter2->Empty());
-      if(accFilter3->IsReady())
-      {
-        lastFiltered = accFilter3->Empty();
-        if(lastFiltered > gMax)
-          gMax = lastFiltered;
-        if(lastFiltered < gMin)
-          gMin = lastFiltered;
-      }
-    }*/
-  //}
-
-  //Serial.print(" ");
-  //Serial.print(av);
-  //Serial.print(" ");
-  //Serial.println(gyro_y);
-  //Serial.print(" "); Serial.println(gyro_y);
-  //Serial.print(" "); Serial.println(convert_int16_to_str(accelerometer_z));
-  /*Serial.print(1000);
-  Serial.print(" ");
-  Serial.print(-1000);
-  Serial.print(" ");
-  Serial.print(lastDipValue);
-  Serial.print(" ");
-  Serial.print(av);
-  Serial.print(" ");
-  Serial.print(lastImpact);
-  Serial.print(" ");
-  Serial.print(impactFilter->peekVal);
-  Serial.println(" ");*/
-
-  /*if(impact > 1000)
-  {
-    SdPlay.play(); // play music
-    while(!SdPlay.isStopped())
-    { ;
+      Serial.print("c: "); Serial.println(impact);
+      lastImpact = millis();
+      byte sfile = OnCollision->GetRandomSoundfile();
+      playFile(sfile, OnCollision->prefix);
+      return;
     }
-  }*/
-  
+
+    if(wasDriving && meanForces->mean < IS_CLEANING_EDGE) // Finished cleaning
+    {
+      Serial.println("fin");
+      lastImpact = millis();
+      wasDriving = false;
+      byte sfile = AfterEnd->GetRandomSoundfile();
+      playFile(sfile, AfterEnd->prefix);
+      return;
+    }
+
+    if(!wasDriving && meanForces->mean > IS_CLEANING_EDGE) // Started cleaning
+    {
+      Serial.println("sta");
+      lastImpact = millis();
+      wasDriving = true;
+      byte sfile = AfterStart->GetRandomSoundfile();
+      playFile(sfile, AfterStart->prefix);
+      return;
+    }
+  }
 }

@@ -1,8 +1,8 @@
 class MeanFinder
 {
   private:
+    
     int lastValue;
-    int mean;
     bool isInit;
 
     int diff(int x, int y)
@@ -18,6 +18,7 @@ class MeanFinder
       return diff;
     }
   public:
+    int mean;
     MeanFinder()
     {
       lastValue = 0;
@@ -25,10 +26,16 @@ class MeanFinder
       isInit = false;
     }
 
-    int Mean()
+    void SetMean(int value)
+    {
+      mean = value;
+      Serial.println("Mean Set");
+    }
+
+    /*int Mean()
     {
       return mean;
-    }
+    }*/
 
     int Get()
     {
@@ -42,10 +49,11 @@ class MeanFinder
       {
         isInit = true;
         mean = value;
+        Serial.println("Inited");
         return diff(mean, value); 
       }
       int rdif = random(diff(mean, value));
-      if(rdif < 20 || rdif > 50)
+      if(rdif > 50||rdif < 20)
       {
         return diff(mean, value);
       }
