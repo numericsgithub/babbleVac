@@ -1,0 +1,7 @@
+
+*.mp3
+*.wav
+*.ide-wal
+*.ide-shm
+*.ide
+*.lock
