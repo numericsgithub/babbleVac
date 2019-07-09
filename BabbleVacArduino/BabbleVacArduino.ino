@@ -51,31 +51,6 @@ void InitFolders()
   LiftUp = new SoundFolder('L', DiscoverFolder('L'));
 }
 
-/*void Add(char* file)
-{
-  switch(file[0])
-  {
-    case 'S': AfterStart->Add(file);
-    break;
-    case 'E': AfterEnd->Add(file);
-    break;
-    case 'C': OnCollision->Add(file);
-    break;
-    case 'W': WhileCleaning->Add(file);
-    break;
-    case 'L': LiftUp->Add(file);
-    break;
-    default: Serial.print("File is in no folder: "); Serial.println(file);
-    break;
-  }
-}
-
-void dir_callback(char *buf) {
-  Serial.println(buf);
-  Add(buf);
-}*/
-
-
 void setup() {
   Serial.begin(115200); 
   Serial.println("Setup started");
@@ -136,9 +111,6 @@ void loop(void)
 {
   if(!SdPlay.isStopped())
     return;
-  /*char* sfile = AfterStart->GetRandomSoundfile();
-  Serial.println(sfile);
-  return;*/
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B); // starting with register 0x3B (ACCEL_XOUT_H) [MPU-6000 and MPU-6050 Register Map and Descriptions Revision 4.2, p.40]
   Wire.endTransmission(false); // the parameter indicates that the Arduino will send a restart. As a result, the connection is kept active.
@@ -196,7 +168,7 @@ void loop(void)
     Serial.print(wasDriving * 700);
     Serial.println(" ");
   }
-  if(millis() % 1 == 0) // Feed all Finders and Filters for 1 milisec
+  if(millis() % 1 == 0) // Feed all Finders and Filters for 1 milisec (Not really waiting its always true)
   {
     int forceX = maxForceX->Get();
     int forceY = maxForceY->Get();
@@ -206,9 +178,6 @@ void loop(void)
     int forceImpact = meanForceImpact->Get();
     int impact = max(0, forceImpact - abs(forceZ));
 
-
-
-    
     if((millis() - lastImpact) < 1500) // Only play songs every 1.5 seconds
       return;
     
